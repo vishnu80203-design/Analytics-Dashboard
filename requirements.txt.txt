@@ -1,0 +1,3 @@
+git rm requirements.txt.txt
+git commit -m "Delete requirements.txt.txt"
+git push
