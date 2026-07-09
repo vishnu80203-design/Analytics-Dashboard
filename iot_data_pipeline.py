@@ -83,5 +83,4 @@ output_file = 'fleet_iiot_metrics.parquet'
 fleet_hourly.to_parquet(output_file, index=False)
 
 print(f"PIPELINE COMPLETE. Data exported to: {output_file}")
-display(fleet_hourly.head())
 
