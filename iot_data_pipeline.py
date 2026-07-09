@@ -12,75 +12,68 @@ import numpy as np
 
 print("INITIATING FLEET-WIDE IIoT DATA AGGREGATION PIPELINE...")
 
-# 1. DATA INGESTION & SANITIZATION
+# 1. DATA INGESTION
 try:
     df = pd.read_csv('iot_telemetry.csv')
-    print("Detected Columns:", df.columns.tolist())
 except FileNotFoundError:
     print("CRITICAL ERROR: 'iot_telemetry.csv' not found.")
     exit()
 
-# Strip whitespace from column names
-df.columns = df.columns.str.strip()
-
-# Map correct column names based on detected schema
+df.columns = df.columns.str.strip().str.lower()
 df['timestamp'] = pd.to_datetime(df['timestamp'])
 df = df.sort_values(by=['machine_id', 'timestamp'])
 
-# Standardize status strings
-df['production_status'] = df['production_status'].astype(str).str.strip().str.upper()
-print("DETECTED MACHINE STATES:", df['production_status'].unique())
-# 2. EXPLICIT DOWNTIME EXTRACTION
-status_dummies = pd.get_dummies(df['production_status'])
-df = pd.concat([df, status_dummies], axis=1)
+# Create a proxy column to count total minutes (1 row = 1 minute)
+df['row_count'] = 1
 
-# Defensive Engineering: Ensure expected status columns exist for aggregation
-for state in ['RUNNING', 'IDLE', 'FAILURE']:
-    if state not in df.columns:
-        df[state] = 0
-
-# 3. FLEET AGGREGATION
+# 2. FLEET AGGREGATION (Hourly blocks using actual numeric schema)
 aggregation_rules = {
     'temperature': 'mean',
     'vibration_level': 'max',
     'power_consumption': 'sum',
-    'RUNNING': 'sum',
-    'IDLE': 'sum',
-    'FAILURE': 'sum'
+    'downtime': 'sum',          
+    'error_rate': 'mean',       
+    'efficiency_score': 'mean', 
+    'row_count': 'sum'          
 }
 
-if 'produced_parts' in df.columns and 'defective_parts' in df.columns:
-    aggregation_rules['produced_parts'] = 'sum'
-    aggregation_rules['defective_parts'] = 'sum'
-else:
-    # Estimation logic based on status
-    df['produced_parts'] = np.where(df['production_status'] == 'RUNNING', 5, 0)
-    vibration_threshold = df['vibration_level'].quantile(0.85)
-    df['defective_parts'] = np.where((df['production_status'] == 'RUNNING') & (df['vibration_level'] > vibration_threshold), 1, 0)
-    aggregation_rules['produced_parts'] = 'sum'
-    aggregation_rules['defective_parts'] = 'sum'
-
-# Grouping - Updated freq to 'h' to resolve FutureWarning
 fleet_hourly = df.groupby(['machine_id', pd.Grouper(key='timestamp', freq='h')]).agg(aggregation_rules).reset_index()
+fleet_hourly.rename(columns={'row_count': 'total_minutes'}, inplace=True)
 
-# 4. OEE CALCULATION
-total_minutes = fleet_hourly['RUNNING'] + fleet_hourly['IDLE'] + fleet_hourly['FAILURE']
-fleet_hourly['Availability'] = np.where(total_minutes > 0, fleet_hourly['RUNNING'] / total_minutes, 0)
+# 3. ALIGN WITH FRONTEND SCHEMA REQUIREMENTS
+fleet_hourly['FAILURE'] = fleet_hourly['downtime']
+fleet_hourly['RUNNING'] = fleet_hourly['total_minutes'] - fleet_hourly['FAILURE']
+fleet_hourly['RUNNING'] = fleet_hourly['RUNNING'].clip(lower=0)
+fleet_hourly['IDLE'] = 0
 
-IDEAL_HOURLY_PRODUCTION = 300
-fleet_hourly['Performance'] = (fleet_hourly['produced_parts'] / IDEAL_HOURLY_PRODUCTION).clip(upper=1.0)
-
-fleet_hourly['Quality'] = np.where(
-    fleet_hourly['produced_parts'] > 0,
-    (fleet_hourly['produced_parts'] - fleet_hourly['defective_parts']) / fleet_hourly['produced_parts'],
+# 4. OEE MATHEMATICAL TRANSLATION
+fleet_hourly['Availability'] = np.where(
+    fleet_hourly['total_minutes'] > 0, 
+    fleet_hourly['RUNNING'] / fleet_hourly['total_minutes'], 
     0
 )
 
+# Scale native efficiency score to standard 0.0-1.0 percentage
+fleet_hourly['Performance'] = (fleet_hourly['efficiency_score'] / 100).clip(upper=1.0)
+
+# Quality is the inverse of the error rate
+fleet_hourly['Quality'] = (1.0 - fleet_hourly['error_rate']).clip(lower=0.0)
+
+# Final OEE
 fleet_hourly['OEE_Score'] = fleet_hourly['Availability'] * fleet_hourly['Performance'] * fleet_hourly['Quality']
 
-# 5. EXPORT
+# Proxy physical part counts for the UI charts
+IDEAL_HOURLY_PRODUCTION = 300
+fleet_hourly['produced_parts'] = fleet_hourly['Performance'] * IDEAL_HOURLY_PRODUCTION
+fleet_hourly['defective_parts'] = fleet_hourly['produced_parts'] * fleet_hourly['error_rate']
+
+# Ensure exact column match for Streamlit rendering
+final_columns = ['machine_id', 'timestamp', 'temperature', 'vibration_level', 'power_consumption', 
+                 'RUNNING', 'IDLE', 'FAILURE', 'produced_parts', 'defective_parts', 
+                 'Availability', 'Performance', 'Quality', 'OEE_Score']
+fleet_hourly = fleet_hourly[final_columns]
+
+# 5. PARQUET EXPORT
 output_file = 'fleet_iiot_metrics.parquet'
 fleet_hourly.to_parquet(output_file, index=False)
-
 print(f"PIPELINE COMPLETE. Data exported to: {output_file}")
-
