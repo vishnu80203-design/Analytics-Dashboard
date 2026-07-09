@@ -1,0 +1,40 @@
+name: Fleet IIoT ETL Pipeline
+
+# 1. THE TRIGGER: Executes on code push and at the top of every hour
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 * * * *' 
+
+jobs:
+  process-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 2. GET THE CODE
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 3. SET UP THE ENVIRONMENT
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # 4. INSTALL FACTORY DEPENDENCIES
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      # 5. EXECUTE THE BACKEND PANDAS SCRIPT
+      - name: Run Fleet Aggregation Script
+        run: python iot_data_pipeline.py
+
+      # 6. PUSH THE COMPILED DATA BACK TO REPO
+      - name: Commit and Push Parquet File
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add fleet_iiot_metrics.parquet
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update Fleet OEE Metrics" && git push)
