@@ -29,7 +29,7 @@ df = df.sort_values(by=['machine_id', 'timestamp'])
 
 # Standardize status strings
 df['production_status'] = df['production_status'].astype(str).str.strip().str.upper()
-
+print("DETECTED MACHINE STATES:", df['production_status'].unique())
 # 2. EXPLICIT DOWNTIME EXTRACTION
 status_dummies = pd.get_dummies(df['production_status'])
 df = pd.concat([df, status_dummies], axis=1)
