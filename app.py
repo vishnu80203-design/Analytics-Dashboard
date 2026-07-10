@@ -52,6 +52,7 @@ fig_oee = px.line(display_df, x='timestamp', y=['OEE_Score', 'Availability', 'Pe
 fig_oee.layout.yaxis.tickformat = ',.0%'
 st.plotly_chart(fig_oee, use_container_width=True)
 
+
 col_chart1, col_chart2 = st.columns(2)
 
 with col_chart1:
@@ -59,6 +60,7 @@ with col_chart1:
                             color='FAILURE', title="Mechanical Stress vs. Failure Time (Color = Minutes Lost)",
                             color_continuous_scale="Reds")
     st.plotly_chart(fig_stress, use_container_width=True)
+
 
 with col_chart2:
     fig_production = px.area(display_df, x='timestamp', y=['produced_parts', 'defective_parts'], 
