@@ -3,10 +3,8 @@ name: Fleet IIoT ETL Pipeline
 on:
   push:
     branches:
-      - main
-  schedule:
-    - cron: '0 * * * *' 
-
+      - main 
+      
 jobs:
   process-data:
     runs-on: ubuntu-latest
