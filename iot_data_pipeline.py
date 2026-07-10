@@ -31,7 +31,7 @@ aggregation_rules = {
     'temperature': 'mean',
     'vibration_level': 'max',
     'power_consumption': 'sum',
-    'downtime': 'sum',          
+    'downtime': 'mean',          
     'error_rate': 'mean',       
     'efficiency_score': 'mean', 
     'row_count': 'sum'          
@@ -41,7 +41,7 @@ fleet_hourly = df.groupby(['machine_id', pd.Grouper(key='timestamp', freq='h')])
 fleet_hourly.rename(columns={'row_count': 'total_minutes'}, inplace=True)
 
 # 3. ALIGN WITH FRONTEND SCHEMA REQUIREMENTS
-fleet_hourly['FAILURE'] = fleet_hourly['downtime']
+fleet_hourly['FAILURE'] = fleet_hourly['downtime'].clip(upper=fleet_hourly['total_minutes'])
 fleet_hourly['RUNNING'] = fleet_hourly['total_minutes'] - fleet_hourly['FAILURE']
 fleet_hourly['RUNNING'] = fleet_hourly['RUNNING'].clip(lower=0)
 fleet_hourly['IDLE'] = 0
